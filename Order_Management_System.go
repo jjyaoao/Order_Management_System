@@ -132,8 +132,8 @@ func deleteUser(c *gin.Context, db *sql.DB) {
 // 添加订单/购物车
 func addOrder(c *gin.Context, db *sql.DB) {
 	userid := c.PostForm("userid")
-
-	_, err := db.Exec("INSERT INTO orders (userid) VALUES (?)", userid)
+	shopid := c.PostForm("shopid")
+	_, err := db.Exec("INSERT INTO orders (userid, shopid) VALUES (?, ?)", userid, shopid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "创建订单失败"})
 		return
