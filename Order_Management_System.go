@@ -133,7 +133,25 @@ func deleteUser(c *gin.Context, db *sql.DB) {
 func addOrder(c *gin.Context, db *sql.DB) {
 	userid := c.PostForm("userid")
 	shopid := c.PostForm("shopid")
-	_, err := db.Exec("INSERT INTO orders (userid, shopid) VALUES (?, ?)", userid, shopid)
+
+	// 先查询shops表中是否有该shopid对应的数据
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM shops WHERE shopid = ?", shopid).Scan(&count)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "查询店铺信息失败"})
+		return
+	}
+
+	if count == 0 { // 如果没有，则插入该数据
+		_, err = db.Exec("INSERT INTO shops (shopid, shopname, rating) VALUES (?, ?, ?)", shopid, "未知店铺", 5.0)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "添加店铺信息失败"})
+			return
+		}
+	}
+
+	// 插入订单数据
+	_, err = db.Exec("INSERT INTO orders (userid, shopid) VALUES (?, ?)", userid, shopid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "创建订单失败"})
 		return
