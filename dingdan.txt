@@ -1,0 +1,45 @@
+DROP TABLE IF EXISTS userinfo;
+CREATE TABLE userinfo (
+  userid INT AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(50) NOT NULL,
+  password VARCHAR(255) NOT NULL,
+  registerAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  status INT DEFAULT 1,
+  isdelete INT DEFAULT 0
+);
+
+DROP TABLE IF EXISTS shops;
+CREATE TABLE shops (
+  shopid INT AUTO_INCREMENT PRIMARY KEY,
+  shopname VARCHAR(50) NOT NULL,
+  rating FLOAT NOT NULL DEFAULT 5.0
+);
+
+DROP TABLE IF EXISTS orders;
+CREATE TABLE orders (
+  orderid INT AUTO_INCREMENT PRIMARY KEY,
+  userid INT NOT NULL,
+  shopid INT NOT NULL,
+  status ENUM('待支付', '待发货', '待收货', '已完成', '已取消') DEFAULT '待支付',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (userid) REFERENCES userinfo(userid),
+  FOREIGN KEY (shopid) REFERENCES shops(shopid)
+);
+
+DROP TABLE IF EXISTS reviews;
+CREATE TABLE reviews (
+  reviewid INT AUTO_INCREMENT PRIMARY KEY,
+  orderid INT NOT NULL,
+  userid INT NOT NULL,
+  content TEXT NOT NULL,
+  rating INT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (orderid) REFERENCES orders(orderid),
+  FOREIGN KEY (userid) REFERENCES userinfo(userid)
+);
+
+
+
+
+
