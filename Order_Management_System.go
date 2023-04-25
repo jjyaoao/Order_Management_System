@@ -1,8 +1,8 @@
 /*
  * @Author: jjyaoao
  * @Date: 2023-04-25 17:04:10
- * @Last Modified by:   jjyaoao
- * @Last Modified time: 2023-04-25 17:04:10
+ * @Last Modified by: jjyaoao
+ * @Last Modified time: 2023-04-25 17:39:42
  */
 package main
 
@@ -277,7 +277,19 @@ func addReview(c *gin.Context, db *sql.DB) {
 	content := c.PostForm("content")
 	rating := c.PostForm("rating")
 
-	_, err := db.Exec("INSERT INTO reviews (orderid, userid, content, rating) VALUES (?, ?, ?, ?)", orderid, userid, content, rating)
+	// 检查订单是否已关闭
+	var status string
+	err := db.QueryRow("SELECT status FROM orders WHERE orderid = ?", orderid).Scan(&status)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "查询订单状态失败"})
+		return
+	}
+	if status == "已取消" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "订单已关闭，不能添加评价"})
+		return
+	}
+
+	_, err = db.Exec("INSERT INTO reviews (orderid, userid, content, rating) VALUES (?, ?, ?, ?)", orderid, userid, content, rating)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "添加评价失败"})
 		return
