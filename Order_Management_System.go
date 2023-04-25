@@ -1,3 +1,9 @@
+/*
+ * @Author: jjyaoao
+ * @Date: 2023-04-25 17:04:10
+ * @Last Modified by:   jjyaoao
+ * @Last Modified time: 2023-04-25 17:04:10
+ */
 package main
 
 import (
@@ -30,12 +36,12 @@ func main() {
 	})
 
 	// 修改密码√
-	r.PUT("/update_password", func(c *gin.Context) {
+	r.PUT("/update_password", jwtAuthMiddleware(), func(c *gin.Context) {
 		updatePassword(c, db)
 	})
 
 	// 删除用户（逻辑删除）√
-	r.PUT("/delete_user", func(c *gin.Context) {
+	r.PUT("/delete_user", jwtAuthMiddleware(), func(c *gin.Context) {
 		deleteUser(c, db)
 	})
 
@@ -45,17 +51,17 @@ func main() {
 	})
 
 	// 订单送达√
-	r.PUT("/order_delivered", func(c *gin.Context) {
+	r.PUT("/order_delivered", jwtAuthMiddleware(), func(c *gin.Context) {
 		orderDelivered(c, db)
 	})
 
 	// 取消订单√
-	r.PUT("/cancel_order", func(c *gin.Context) {
+	r.PUT("/cancel_order", jwtAuthMiddleware(), func(c *gin.Context) {
 		cancelOrder(c, db)
 	})
 
 	// 添加评论
-	r.POST("/add_review", func(c *gin.Context) {
+	r.POST("/add_review", jwtAuthMiddleware(), func(c *gin.Context) {
 		addReview(c, db)
 	})
 	r.Run(":8080")
@@ -82,31 +88,10 @@ func generateToken(username string) (string, error) {
 	return token.SignedString([]byte("your-secret-key"))
 }
 
-// // 验证登录加密
-// func parseToken(tokenString string) (jwt.MapClaims, error) {
-// 	// Parse token
-// 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-// 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-// 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-// 		}
-// 		return []byte("your-secret-key"), nil
-// 	})
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	// Verify token and get claims
-// 	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-// 		return claims, nil
-// 	} else {
-// 		return nil, fmt.Errorf("invalid token")
-// 	}
-// }
-
 func jwtAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenString := c.GetHeader("Authorization")
-		fmt.Println(tokenString)
+		// fmt.Println(tokenString)
 		if tokenString == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{"message": "未授权"})
 			c.Abort()
@@ -165,9 +150,9 @@ func loginUser(c *gin.Context, db *sql.DB) {
 
 	// 将token添加到响应头
 	c.Writer.Header().Set("Authorization", "Bearer "+token)
-	fmt.Println(token)
+	// fmt.Println(token)
 
-	c.JSON(http.StatusOK, gin.H{"userid": userid, "username": username, "message": "登录成功"})
+	c.JSON(http.StatusOK, gin.H{"Authorization": token, "userid": userid, "username": username, "message": "登录成功"})
 }
 
 // 改密码
@@ -234,7 +219,6 @@ func addOrder(c *gin.Context, db *sql.DB) {
 	if count == 0 { // 如果没有，则插入该数据
 		_, err = db.Exec("INSERT INTO shops (shopid, shopname, rating) VALUES (?, ?, ?)", shopid, "未知店铺", 5.0)
 		if err != nil {
-			fmt.Println(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"message": "添加店铺信息失败"})
 			return
 		}
@@ -254,7 +238,18 @@ func addOrder(c *gin.Context, db *sql.DB) {
 func orderDelivered(c *gin.Context, db *sql.DB) {
 	orderid := c.PostForm("orderid")
 
-	_, err := db.Exec("UPDATE orders SET status = '已完成' WHERE orderid = ?", orderid)
+	// 检查订单是否是待支付状态
+	var status string
+	err := db.QueryRow("SELECT status FROM orders WHERE orderid = ?", orderid).Scan(&status)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "订单送达失败"})
+		return
+	}
+	if status != "待支付" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "订单已经配送或已完成"})
+		return
+	}
+	_, err = db.Exec("UPDATE orders SET status = '已完成' WHERE orderid = ?", orderid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "订单送达失败"})
 		return
@@ -305,16 +300,18 @@ func addReview(c *gin.Context, db *sql.DB) {
 
 	// 计算店铺的评分
 	var count int
-	var sum int
+	var sum float64
 	err = db.QueryRow("SELECT COUNT(reviewid), SUM(rating) FROM reviews WHERE orderid IN (SELECT orderid FROM orders WHERE shopid = ? AND status = '已完成')", shopid).Scan(&count, &sum)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "计算店铺评分失败"})
 		return
 	}
 
-	var score float32
-	if count > 0 {
-		score = float32(sum) / float32(count)
+	var score float64
+	if count == 0 {
+		score = 5.0
+	} else {
+		score = sum / float64(count)
 	}
 
 	// 更新店铺评分
