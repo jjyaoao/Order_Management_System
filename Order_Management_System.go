@@ -2,10 +2,13 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/golang-jwt/jwt"
 )
 
 func main() {
@@ -37,7 +40,7 @@ func main() {
 	})
 
 	// 加入购物车/外卖下单(合并，方便)√
-	r.POST("/add_order", func(c *gin.Context) {
+	r.POST("/add_order", jwtAuthMiddleware(), func(c *gin.Context) {
 		addOrder(c, db)
 	})
 
@@ -67,6 +70,74 @@ func initDB() *sql.DB {
 	return db
 }
 
+// 登录加密
+func generateToken(username string) (string, error) {
+	// Set token claims
+	claims := jwt.MapClaims{}
+	claims["username"] = username
+	claims["exp"] = time.Now().Add(time.Hour * 24).Unix()
+
+	// Generate token
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte("your-secret-key"))
+}
+
+// // 验证登录加密
+// func parseToken(tokenString string) (jwt.MapClaims, error) {
+// 	// Parse token
+// 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+// 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+// 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+// 		}
+// 		return []byte("your-secret-key"), nil
+// 	})
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	// Verify token and get claims
+// 	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+// 		return claims, nil
+// 	} else {
+// 		return nil, fmt.Errorf("invalid token")
+// 	}
+// }
+
+func jwtAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tokenString := c.GetHeader("Authorization")
+		fmt.Println(tokenString)
+		if tokenString == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "未授权"})
+			c.Abort()
+			return
+		}
+
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+			return []byte("your-secret-key"), nil
+		})
+
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "未授权"})
+			c.Abort()
+			return
+		}
+
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok || !token.Valid {
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "未授权"})
+			c.Abort()
+			return
+		}
+
+		c.Set("username", claims["username"])
+		c.Next()
+	}
+}
+
 // 登录
 func loginUser(c *gin.Context, db *sql.DB) {
 	username := c.PostForm("username")
@@ -85,7 +156,18 @@ func loginUser(c *gin.Context, db *sql.DB) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"userid": userid, "username": username})
+	// 生成token
+	token, err := generateToken(username)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "登录失败"})
+		return
+	}
+
+	// 将token添加到响应头
+	c.Writer.Header().Set("Authorization", "Bearer "+token)
+	fmt.Println(token)
+
+	c.JSON(http.StatusOK, gin.H{"userid": userid, "username": username, "message": "登录成功"})
 }
 
 // 改密码
@@ -131,6 +213,13 @@ func deleteUser(c *gin.Context, db *sql.DB) {
 
 // 添加订单/购物车
 func addOrder(c *gin.Context, db *sql.DB) {
+	// 验证登录
+	username, exists := c.Get("username")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "未授权"})
+		return
+	}
+
 	userid := c.PostForm("userid")
 	shopid := c.PostForm("shopid")
 
@@ -145,6 +234,7 @@ func addOrder(c *gin.Context, db *sql.DB) {
 	if count == 0 { // 如果没有，则插入该数据
 		_, err = db.Exec("INSERT INTO shops (shopid, shopname, rating) VALUES (?, ?, ?)", shopid, "未知店铺", 5.0)
 		if err != nil {
+			fmt.Println(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"message": "添加店铺信息失败"})
 			return
 		}
@@ -157,7 +247,7 @@ func addOrder(c *gin.Context, db *sql.DB) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "订单已创建"})
+	c.JSON(http.StatusOK, gin.H{"message": "订单已创建", "username": username})
 }
 
 // 订单送达
@@ -228,7 +318,7 @@ func addReview(c *gin.Context, db *sql.DB) {
 	}
 
 	// 更新店铺评分
-	_, err = db.Exec("UPDATE shops SET score = ? WHERE shopid = ?", score, shopid)
+	_, err = db.Exec("UPDATE shops SET rating = ? WHERE shopid = ?", score, shopid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "更新店铺评分失败"})
 		return
