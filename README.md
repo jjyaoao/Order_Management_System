@@ -1,6 +1,6 @@
 # Order_Management_System
 
-> 正在施工中，本身为简易Demo，着重帮助掌握Go语言语法以及Gin开发框架简单使用，喜欢就点个Star吧！
+> 正在施工中，本身为简易 Demo，着重帮助掌握 Go 语言语法以及 Gin 开发框架简单使用，喜欢就点个 Star 吧！
 
 ## 准备工作
 
@@ -8,13 +8,11 @@
 
 本项目数据库为`mysql-8.0.29-winx64`，数据字段如下所示：
 
-
-
 ![image-20230423214159264](README/image-20230423214159264.png)
 
-> 提供SQL语句一键建表
+> 提供 SQL 语句一键建表
 
-~~~mysql
+```mysql
 DROP TABLE IF EXISTS userinfo;
 CREATE TABLE userinfo (
   userid INT AUTO_INCREMENT PRIMARY KEY,
@@ -56,35 +54,54 @@ CREATE TABLE reviews (
   FOREIGN KEY (orderid) REFERENCES orders(orderid),
   FOREIGN KEY (userid) REFERENCES userinfo(userid)
 );
-~~~
+```
 
-### Go语言环境
+### Go 语言环境
 
-golang版本为`go1.20.2 windows/amd64`
+golang 版本为`go1.20.2 windows/amd64`
 
 提供一篇写的挺好的帖子，感谢大哥的开源精神！
 
-[vs code配置go开发环境 - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/262984879)
+[vs code 配置 go 开发环境 - 知乎 (zhihu.com)](https://zhuanlan.zhihu.com/p/262984879)
 
+若无法下载 import 依赖，请在命令行输入：
 
-
-若无法下载import依赖，请在命令行输入：
-
-~~~shell
+```shell
 go env -w GO111MODULE=on
 go env -w GOPROXY=https://goproxy.cn,direct
-~~~
+```
 
 ## 运行项目
 
-> 开发框架采用Gin（一个用 Go (Golang) 编写的 HTTP Web 框架）
+> 开发框架采用 Gin（一个用 Go (Golang) 编写的 HTTP Web 框架）
 
-~~~shell
+```shell
 cd Order_Management_System
 go mod init github.com/jjyaoao/Order_Management_System
 go mod tidy
 go run .\Order_Management_System.go
-~~~
+```
+
+## 实现功能
+
+用户表段
+
+- 登录操作：select
+- 修改密码：update
+- 用户注册：add
+- 删除用户：delete （逻辑删除 update）
+
+订单表段：
+
+- 加入购物车 ：add
+- 外卖下单：add
+- 订单送达：update
+- 取消订单：update
+
+评价表段：
+
+- 评价： add（增加评价记录)
+- update(修改订单状态，修改整个店铺的评分)
 
 ## 展望
 
@@ -99,6 +116,3 @@ go run .\Order_Management_System.go
 - 增加物流信息，实现`待发货`与`待收货`的功能。
 
 这里也是一些未完成的设想，鉴于本人太菜，以后会慢慢填坑的（bushi
-
-
-
