@@ -2,7 +2,7 @@
  * @Author: jjyaoao
  * @Date: 2023-04-25 17:04:10
  * @Last Modified by: jjyaoao
- * @Last Modified time: 2023-04-25 21:27:41
+ * @Last Modified time: 2023-05-15 09:43:42
  */
 package main
 
@@ -10,6 +10,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -155,9 +156,50 @@ func loginUser(c *gin.Context, db *sql.DB) {
 	c.JSON(http.StatusOK, gin.H{"Authorization": token, "userid": userid, "username": username, "message": "登录成功"})
 }
 
+func getUserIDFromUsername(db *sql.DB, username string) (int, error) {
+	var userid int
+	err := db.QueryRow("SELECT userid FROM userinfo WHERE username = ?", username).Scan(&userid)
+	if err != nil {
+		return 0, err
+	}
+	return userid, nil
+}
+
+func verifyUserID(c *gin.Context, db *sql.DB) (int, bool) {
+	// 从请求中获取前端传来的用户ID
+	requestedUserID := c.PostForm("userid")
+
+	// 从 gin.Context 中获取已经鉴权的用户名
+	username, exists := c.Get("username")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "未授权"})
+		return -1, false
+	}
+
+	// 使用 getUserIDFromUsername 函数获取用户ID
+	userid, err := getUserIDFromUsername(db, username.(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "无法获取用户ID"})
+		return -1, false
+	}
+
+	// 如果前端传来的用户ID与通过用户名查询到的用户ID不匹配，返回错误信息
+	if strconv.Itoa(userid) != requestedUserID {
+		c.JSON(http.StatusForbidden, gin.H{"message": "请不要尝试修改其他用户的任何东西"})
+		return -1, false
+	}
+	return userid, true
+}
+
 // 改密码
 func updatePassword(c *gin.Context, db *sql.DB) {
-	userid := c.PostForm("userid")
+	userid, valid := verifyUserID(c, db)
+
+	if userid == -1 || !valid {
+		// 如果验证不通过，verifyUserID 已经设置了相应的 HTTP 状态码和错误消息，这里直接返回
+		return
+	}
+
 	newPassword := c.PostForm("new_password")
 
 	_, err := db.Exec("UPDATE userinfo SET password = ? WHERE userid = ?", newPassword, userid)
@@ -185,7 +227,12 @@ func registerUser(c *gin.Context, db *sql.DB) {
 
 // 删除用户
 func deleteUser(c *gin.Context, db *sql.DB) {
-	userid := c.PostForm("userid")
+	userid, valid := verifyUserID(c, db)
+
+	if userid == -1 || !valid {
+		// 如果验证不通过，verifyUserID 已经设置了相应的 HTTP 状态码和错误消息，这里直接返回
+		return
+	}
 
 	_, err := db.Exec("UPDATE userinfo SET isdelete = 1 WHERE userid = ?", userid)
 	if err != nil {
@@ -205,7 +252,13 @@ func addOrder(c *gin.Context, db *sql.DB) {
 		return
 	}
 
-	userid := c.PostForm("userid")
+	userid, valid := verifyUserID(c, db)
+
+	if userid == -1 || !valid {
+		// 如果验证不通过，verifyUserID 已经设置了相应的 HTTP 状态码和错误消息，这里直接返回
+		return
+	}
+
 	shopid := c.PostForm("shopid")
 
 	// 先查询shops表中是否有该shopid对应的数据
@@ -262,9 +315,35 @@ func orderDelivered(c *gin.Context, db *sql.DB) {
 func cancelOrder(c *gin.Context, db *sql.DB) {
 	orderid := c.PostForm("orderid")
 
-	_, err := db.Exec("UPDATE orders SET status = '已取消' WHERE orderid = ?", orderid)
+	// 从 gin.Context 中获取已经鉴权的用户名
+	username, exists := c.Get("username")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "未授权"})
+		return
+	}
+
+	// 使用 getUserIDFromUsername 函数获取用户ID
+	userid, err := getUserIDFromUsername(db, username.(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "无法获取用户ID"})
+		return
+	}
+
+	// 更新订单状态，只有当订单属于当前用户时才进行更新
+	result, err := db.Exec("UPDATE orders SET status = '已取消' WHERE orderid = ? AND userid = ?", orderid, userid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "取消订单失败"})
+		return
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "取消订单失败"})
+		return
+	}
+
+	if rowsAffected == 0 {
+		c.JSON(http.StatusForbidden, gin.H{"message": "你无法取消别人的订单"})
 		return
 	}
 
@@ -273,9 +352,14 @@ func cancelOrder(c *gin.Context, db *sql.DB) {
 
 func addReview(c *gin.Context, db *sql.DB) {
 	orderid := c.PostForm("orderid")
-	userid := c.PostForm("userid")
 	content := c.PostForm("content")
 	rating := c.PostForm("rating")
+	userid, valid := verifyUserID(c, db)
+
+	if userid == -1 || !valid {
+		// 如果验证不通过，verifyUserID 已经设置了相应的 HTTP 状态码和错误消息，这里直接返回
+		return
+	}
 
 	// 检查订单是否已关闭
 	var status string
